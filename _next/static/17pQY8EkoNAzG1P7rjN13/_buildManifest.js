@@ -1,13 +1,18 @@
 self.__BUILD_MANIFEST = {
   "/": [
-    "static/chunks/23962d1c7bbaf70e.js"
+    "static/chunks/4569a70633c202fa.js"
   ],
   "/_error": [
-    "static/chunks/6929c60ef214e48d.js"
+    "static/chunks/95effb84aab1eba7.js"
   ],
   "__rewrites": {
     "afterFiles": [],
-    "beforeFiles": [],
+    "beforeFiles": [
+      {
+        "source": "/orcamento//_next/:path+",
+        "destination": "/orcamento/_next/:path+"
+      }
+    ],
     "fallback": []
   },
   "sortedPages": [
