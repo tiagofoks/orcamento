@@ -1,98 +1,435 @@
-// pages/index.js
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { User, DollarSign, Printer, Save, RefreshCw, ArrowRight, Home, Mail, Phone, MapPin, Package, Sun, Ruler, Clock, AlertTriangle, Send } from 'lucide-react';
 
-import React, { useCallback, useState, useRef } from 'react';
-import { Sun, ArrowRight, RefreshCw } from 'lucide-react';
-// Importação do html2pdf.js (dynamic import)
-// Não precisamos mais da inicialização do Firebase aqui!
+// 🚨 IMPORTAÇÃO DO COMPONENTE CORRIGIDA (Assumindo que você moverá/corrigirá o nome do arquivo)
+import BudgetView from '../components/ui/BudsgetView'; // <--- VERIFIQUE O NOME NO SEU ARQUIVO!
 
-// Importa o Hook e os Componentes refatorados
-import { useBudget } from '../hooks/useBudget'; 
-import ClientForm from '../components/ui/ClientForm';
-import ItemTable from '../components/ui/ItemTable';
-import PriceSettings from '../components/ui/PriceSettings';
-import BudgetView from '../components/ui/BudgetView';
-import ActionButtons from '../components/ui/ActionButtons';
+// Importações do Firebase
+import { initializeApp } from 'firebase/app';
+import { 
+    getFirestore, 
+    doc, 
+    setDoc, 
+    getDoc, 
+    collection, 
+    serverTimestamp, 
+} from 'firebase/firestore';
 
-// --- FUNÇÃO PARA IMPRIMIR/GERAR PDF (MOVENDO A LÓGICA DE GERAÇÃO PARA CÁ) ---
-
-// Handler de Impressão (MANTIDO)
-const handlePrint = (budgetRef) => {
-    if (budgetRef.current) {
-        const printContents = budgetRef.current.outerHTML;
-        const printWindow = window.open('', '_blank');
-
-        printWindow.document.write(`
-            <html>
-            <head>
-                <title>Orçamento Solar</title>
-                <script src="https://cdn.tailwindcss.com"></script> 
-                <style>
-                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Roboto+Mono:wght@400;700&display=swap');
-                body { font-family: 'Inter', sans-serif; margin: 0; padding: 20px; color: #1f2937; }
-                .budget-view { max-width: 800px; margin: 0 auto; }
-                .header-print h1 { font-size: 24px !important; }
-                /* O estilo de impressão com cores deve ser replicado para garantir que a impressão funcione em todos os navegadores */
-                .total-row-print td { 
-                    background-color: #DBEAFE !important; 
-                    color: #06B6D4 !important; 
-                    -webkit-print-color-adjust: exact;
-                    color-adjust: exact;
-                }
-                </style>
-            </head>
-            <body class="p-8">
-                ${printContents}
-                <script>
-                // Atraso para garantir que a renderização ocorra
-                setTimeout(() => {
-                    window.print();
-                    window.onafterprint = function() {
-                        window.close();
-                    };
-                }, 500);
-                </script>
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
-    }
+// 🚨 Configurações do Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyBTeQSKtaXdm5tI9APbniKGbvwhQP205JU",
+  authDomain: "orcamento-44592.firebaseapp.com",
+  projectId: "orcamento-44592",
+  storageBucket: "orcamento-44592.firebasestorage.app",
+  messagingSenderId: "946840065878",
+  appId: "1:946840065878:web:432102f1113927e6cb28f7",
+  measurementId: "G-M1S34G3D62"
 };
 
-// Função para gerar o PDF e forçar o download
-const generateAndDownloadPdf = async (budgetRef, clientName, setIsGeneratingPdf, isSilent = false) => {
-    if (!budgetRef.current) return;
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-    // Importação dinâmica para reduzir o bundle inicial
-    const html2pdf = (await import('html2pdf.js')).default; 
+const COLLECTIONS = {
+    BASE_PRICES: 'base_prices',
+    BUDGETS: 'budgets',
+};
+const DOC_IDS = {
+    BASE_PRICES_DOC: 'global_prices', 
+};
 
-    setIsGeneratingPdf(true);
-    const nomeArquivo = `Orcamento_Solar_${clientName.replace(/ /g, '_') || 'Cliente'}_${new Date().toISOString().substring(0, 10)}.pdf`;
+// --- Dados Iniciais (MANTIDOS) ---
+const INITIAL_ITEMS = [
+    { id: 'boiler2', description: 'RESERVATÓRIO DE 200 LTS BAIXA PRESSÃO KISOLTEC', unitPrice: 2408.00, qty: 0, details: 'Reservatório interno em INOX 304, Revestimento em Poliuretano Expandido, Apoio elétrico 3000W.' },
+    { id: 'boiler3', description: 'RESERVATÓRIO DE 300 LTS BAIXA PRESSÃO KISOLTEC', unitPrice: 2898.00, qty: 0, details: 'Reservatório interno em INOX 304, Revestimento em Poliuretano Expandido, Apoio elétrico 3000W.' },
+    { id: 'boiler4', description: 'RESERVATÓRIO DE 400 LTS BAIXA PRESSÃO KISOLTEC', unitPrice: 3315.00, qty: 0, details: 'Reservatório interno em INOX 304, Revestimento em Poliuretano Expandido, Apoio elétrico 3000W.' },
+    { id: 'boiler5', description: 'RESERVATÓRIO DE 500 LTS BAIXA PRESSÃO KISOLTEC', unitPrice: 3864.00, qty: 0, details: 'Reservatório interno em INOX 304, Revestimento em Poliuretano Expandido, Apoio elétrico 3000W.' },
+    { id: 'boiler6', description: 'RESERVATÓRIO DE 600 LTS BAIXA PRESSÃO KISOLTEC', unitPrice: 4447.00, qty: 0, details: 'Reservatório interno em INOX 304, Revestimento em Poliuretano Expandido, Apoio elétrico 3000W.' },
+    { id: 'boiler8', description: 'RESERVATÓRIO DE 800 LTS BAIXA PRESSÃO KISOLTEC', unitPrice: 5315.00, qty: 0, details: 'Reservatório interno em INOX 304, Revestimento em Poliuretano Expandido, Apoio elétrico 3000W.' },
+    { id: 'boiler10', description: 'RESERVATÓRIO DE 1000 LTS BAIXA PRESSÃO KISOLTEC', unitPrice: 6157.00, qty: 0, details: 'Reservatório interno em INOX 304, Revestimento em Poliuretano Expandido, Apoio elétrico 3000W.' },
+    { id: 'placas', description: 'COLETORES SOLAR KISOLTEC - MODELO ULTRATEC 1.50x0.90', unitPrice: 1220.00, qty: 0, details: 'Máximo aproveitamento por m², Certificado pelo INMETRO e Selo PROCEL.' },
+    { id: 'placas2', description: 'COLETORES SOLAR KISOLTEC - MODELO ULTRATEC 2.00x0.90', unitPrice: 1536.00, qty: 0, details: 'Máximo aproveitamento por m², Certificado pelo INMETRO e Selo PROCEL.' },
+    { id: 'pressurizador', description: 'PRESSURIZADOR MAX POWER (EM INOX)', unitPrice: 1425.00, qty: 0, details: 'Garante pressão ideal pós-boiler.' },
+    { id: 'kit_instalacao', description: 'KIT MATERIAL (EM COBRE) P/INSTALAÇÃO (ESTIMATIVA)', unitPrice: 1900.00, qty: 0, details: 'Tubulação e conexões para montagem do sistema.' },
+    { id: 'timer', description: 'TIMER DIGITAL TLZ', unitPrice: 580.00, qty: 0, details: 'Controle de apoio elétrico.' },
+    { id: 'mao_obra', description: 'MÃO DE OBRA DE INSTALAÇÃO (ESTIMATIVA)', unitPrice: 950.00, qty: 0, details: 'Instalação e testes do sistema completo.' },
+];
 
-    const options = {
-        margin: 10,
-        filename: nomeArquivo,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, logging: false, scrollY: 0, letterRendering: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+// --- Funções Utilitárias (MANTIDAS) ---
+const cleanNumber = (value) => parseFloat(String(value).replace(/[^0-9,.]/g, '').replace(',', '.')) || 0;
+const formatCurrency = (value) => `R$ ${parseFloat(value).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
+
+// --- CUSTOM HOOK: useBudget (MANTIDO) ---
+const useBudget = () => {
+    const [loading, setLoading] = useState(true);
+    const [userId] = useState('user_local_123');
+    const [isAuthReady] = useState(true); 
+    const [basePrices, setBasePrices] = useState({}); 
+
+    const [client, setClient] = useState({
+        nome: '',
+        telefone: '',
+        email: '',
+        endereco: '',
+        cidade: 'Sorocaba/SP',
+    });
+
+    const [items, setItems] = useState(INITIAL_ITEMS.map(item => ({
+        ...item,
+        unitPrice: item.unitPrice,
+        qty: item.qty,
+    })));
+
+    useEffect(() => {
+        const loadBasePricesFromFirestore = async () => {
+            setLoading(true);
+            try {
+                const docRef = doc(db, COLLECTIONS.BASE_PRICES, DOC_IDS.BASE_PRICES_DOC);
+                const docSnap = await getDoc(docRef);
+
+                let loadedPrices = {};
+
+                if (docSnap.exists()) {
+                    loadedPrices = docSnap.data();
+                } else {
+                    console.log("Documento de Preços Base não encontrado, usando defaults.");
+                }
+                
+                setBasePrices(loadedPrices);
+
+                setItems(prevItems => prevItems.map(item => {
+                    const persistedPrice = cleanNumber(loadedPrices[item.id]);
+                    const newPrice = persistedPrice > 0 ? persistedPrice : item.unitPrice; 
+                    return { 
+                        ...item, 
+                        unitPrice: newPrice 
+                    };
+                }));
+
+            } catch (error) {
+                console.error('Erro ao carregar preços base do Firestore:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (isAuthReady) {
+            loadBasePricesFromFirestore();
+        }
+    }, [isAuthReady]);
+
+    const handleClientChange = useCallback((field, value) => {
+        setClient(prev => ({ ...prev, [field]: value }));
+    }, []);
+
+    const handleItemChange = useCallback((id, field, value) => {
+        setItems(prevItems =>
+            prevItems.map(item => {
+                if (item.id === id) {
+                    let newValue = field === 'description' ? value : cleanNumber(value);
+                    if (field === 'qty' && newValue < 0) newValue = 0;
+                    return { ...item, [field]: newValue };
+                }
+                return item;
+            })
+        );
+    }, []);
+
+    const totalValue = useMemo(() => {
+        return items.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
+    }, [items]);
+    
+    const saveBasePrices = useCallback(async (pricesToSave) => {
+        setLoading(true);
+        try {
+            const dataToSave = {};
+            Object.keys(pricesToSave).forEach(id => {
+                dataToSave[id] = cleanNumber(pricesToSave[id]);
+            });
+
+            const docRef = doc(db, COLLECTIONS.BASE_PRICES, DOC_IDS.BASE_PRICES_DOC);
+            
+            await setDoc(docRef, dataToSave, { merge: true });
+
+            setBasePrices(dataToSave); 
+            return true;
+        } catch (error) {
+            console.error('Erro ao salvar preços base no Firestore:', error);
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+    
+    const saveBudget = useCallback(async () => {
+        setLoading(true);
+
+        try {
+            const budgetData = {
+                client,
+                items: items.map(item => ({
+                    description: item.description,
+                    qty: item.qty,
+                    unitPrice: item.unitPrice,
+                    subtotal: item.qty * item.unitPrice,
+                    details: item.details,
+                })),
+                totalValue,
+                createdBy: userId,
+                createdAt: serverTimestamp(), 
+                date: new Date().toLocaleDateString('pt-BR'),
+                guarantees: ['03 ANOS P/BOILER', '03 ANOS P/COLETOR SOLAR', '01 ANO P/PRESSURIZADORES'],
+                conditions: 'À COMBINAR',
+            };
+
+            const docRef = doc(collection(db, COLLECTIONS.BUDGETS));
+            await setDoc(docRef, budgetData);
+            
+            return docRef.id;
+        } catch (error) {
+            console.error('Erro ao salvar orçamento no Firestore:', error);
+            return null;
+        } finally {
+            setLoading(false);
+        }
+    }, [client, items, totalValue, userId]);
+
+
+    return {
+        loading,
+        userId,
+        isAuthReady,
+        client,
+        items,
+        totalValue,
+        basePrices,
+        handleClientChange,
+        handleItemChange,
+        saveBasePrices,
+        saveBudget,
+    };
+};
+
+
+// --- COMPONENTES DE APRESENTAÇÃO (MANTIDOS) ---
+// (ClientForm, ItemTable, PriceSettings, e WhatsappButton devem estar aqui)
+const ClientForm = ({ client, handleClientChange }) => (
+    <div className="bg-white p-6 shadow-xl rounded-lg border-t-4 border-blue-500">
+        <h2 className="text-xl font-semibold mb-4 flex items-center text-gray-700">
+            <User className="w-5 h-5 mr-2 text-blue-500" />
+            1. Dados do Cliente
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {['nome', 'telefone', 'email', 'endereco', 'cidade'].map((field) => (
+                <div key={field} className="flex flex-col">
+                    <label htmlFor={field} className="text-sm font-medium text-gray-600 mb-1 capitalize flex items-center">
+                        {field === 'nome' && <User className="w-4 h-4 mr-1 text-blue-400" />}
+                        {field === 'telefone' && <Phone className="w-4 h-4 mr-1 text-blue-400" />}
+                        {field === 'email' && <Mail className="w-4 h-4 mr-1 text-blue-400" />}
+                        {field === 'endereco' && <Home className="w-4 h-4 mr-1 text-blue-400" />}
+                        {field === 'cidade' && <MapPin className="w-4 h-4 mr-1 text-blue-400" />}
+                        {field.charAt(0).toUpperCase() + field.slice(1)}
+                    </label>
+                    <input
+                        id={field}
+                        type={field === 'email' ? 'email' : 'text'}
+                        value={client[field]}
+                        onChange={(e) => handleClientChange(field, e.target.value)}
+                        className="p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150"
+                        placeholder={`Digite o ${field}...`}
+                    />
+                </div>
+            ))}
+        </div>
+    </div>
+);
+
+const ItemTable = ({ items, handleItemChange, totalValue }) => (
+    <div className="bg-white p-6 shadow-xl rounded-lg border-t-4 border-green-500">
+        <h2 className="text-xl font-semibold mb-4 flex items-center text-gray-700">
+            <Package className="w-5 h-5 mr-2 text-green-500" />
+            2. Itens e Valores
+        </h2>
+        <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+                <thead>
+                    <tr className="text-left bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="p-3 w-16">QTDE</th>
+                        <th className="p-3 w-72">ITEM</th>
+                        <th className="p-3 w-32 text-right">PREÇO UNIT. (R$)</th>
+                        <th className="p-3 w-32 text-right">SUBTOTAL</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                    {items.map((item) => (
+                        <tr key={item.id} className="hover:bg-green-50/50">
+                            <td className="p-2">
+                                <input
+                                    type="number"
+                                    value={item.qty}
+                                    min="0"
+                                    onChange={(e) => handleItemChange(item.id, 'qty', e.target.value)}
+                                    className="w-full text-center p-1 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 transition duration-150 text-sm"
+                                />
+                            </td>
+                            <td className="p-2">
+                                <input
+                                    type="text"
+                                    value={item.description}
+                                    onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
+                                    className="w-full p-1 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 transition duration-150 text-sm"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">{item.details}</p>
+                            </td>
+                            <td className="p-2 text-right">
+                                <input
+                                    type="text"
+                                    value={item.unitPrice.toFixed(2).replace('.', ',')}
+                                    onChange={(e) => handleItemChange(item.id, 'unitPrice', e.target.value)}
+                                    className="w-full text-right p-1 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 transition duration-150 text-sm font-mono"
+                                    placeholder="0,00"
+                                />
+                            </td>
+                            <td className="p-2 text-right font-bold text-gray-700 font-mono">
+                                {formatCurrency(item.qty * item.unitPrice)}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+                <tfoot>
+                    <tr className="bg-green-100 text-green-800 font-bold text-lg">
+                        <td colSpan="3" className="p-3 text-right">TOTAL GERAL</td>
+                        <td className="p-3 text-right">{formatCurrency(totalValue)}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+);
+
+const PriceSettings = ({ userId, isAuthReady, basePrices, saveBasePrices, loadingHook }) => {
+    const [editingPrices, setEditingPrices] = useState({});
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        if (basePrices) {
+            const initialEditing = {};
+            INITIAL_ITEMS.forEach(item => {
+                const price = basePrices[item.id] || item.unitPrice;
+                initialEditing[item.id] = cleanNumber(price).toFixed(2).replace('.', ',');
+            });
+            setEditingPrices(initialEditing);
+        }
+    }, [basePrices]);
+
+    const handlePriceChange = (id, value) => {
+        const cleanedValue = value.replace(/[^0-9,]/g, '');
+        setEditingPrices(prev => ({ ...prev, [id]: cleanedValue }));
     };
 
-    try {
-        await html2pdf().set(options).from(budgetRef.current).save();
-        if (!isSilent) {
-             alert('PDF gerado e baixado com sucesso!');
+    const handleSave = async () => {
+        setIsSaving(true);
+        const success = await saveBasePrices(editingPrices);
+
+        if (success) {
+            alert('Preços base salvos com sucesso no Firestore!');
+        } else {
+            alert('Erro ao salvar preços base. Verifique o console.');
         }
-    } catch (error) {
-        console.error('Erro ao gerar PDF:', error);
-        alert('Erro ao gerar o PDF. Verifique o console. (Certifique-se de que está no navegador)');
-    } finally {
-        setIsGeneratingPdf(false);
+        setIsSaving(false);
+    };
+
+    if (loadingHook && Object.keys(basePrices).length === 0) {
+        return (
+            <div className="flex items-center justify-center p-8 bg-white rounded-xl shadow-xl min-h-[300px]">
+                <RefreshCw className="w-6 h-6 text-yellow-500 animate-spin" />
+                <p className="ml-2 text-gray-700">Carregando configurações...</p>
+            </div>
+        );
     }
+
+    return (
+        <div className="bg-white p-6 shadow-xl rounded-lg border-t-4 border-yellow-500">
+            <h2 className="text-xl font-semibold mb-4 flex items-center text-gray-700">
+                <DollarSign className="w-5 h-5 mr-2 text-yellow-500" />
+                Configuração de Preços Base
+            </h2>
+            <div className="grid grid-cols-1 gap-4">
+                {INITIAL_ITEMS.map((item) => (
+                    <div key={item.id} className="flex flex-col">
+                        <label htmlFor={`price-${item.id}`} className="text-sm font-medium text-gray-600 mb-1 flex items-center">
+                            <Package className="w-4 h-4 mr-1 text-blue-500" />
+                            Preço Base - {item.description.split('(')[0].trim()}
+                        </label>
+                        <div className="flex items-center">
+                            <span className="p-2 bg-gray-100 rounded-l-lg border border-gray-300 text-gray-600 text-sm">R$</span>
+                            <input
+                                id={`price-${item.id}`}
+                                type="text"
+                                value={editingPrices[item.id] || ''}
+                                onChange={(e) => handlePriceChange(item.id, e.target.value)}
+                                className="w-full p-2 border border-gray-300 rounded-r-lg focus:ring-yellow-500 focus:border-yellow-500 transition duration-150 text-right"
+                                placeholder="0,00"
+                            />
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <div className="mt-6 flex justify-end">
+                <button
+                    onClick={handleSave}
+                    className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-200 flex items-center disabled:opacity-50"
+                    disabled={isSaving}
+                >
+                    {isSaving ? (
+                        <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                    ) : (
+                        <Save className="w-5 h-5 mr-2" />
+                    )}
+                    {isSaving ? 'Salvando...' : 'Salvar Preços Base no Firestore'}
+                </button>
+            </div>
+            <p className="mt-4 text-xs text-gray-500 flex items-start">
+                <AlertTriangle className="w-4 h-4 mr-1 mt-0.5 flex-shrink-0 text-red-400" />
+                Estes preços são persistentes (**Firestore**) e aplicados automaticamente.
+            </p>
+        </div>
+    );
+};
+
+const WhatsappButton = ({ client, onGeneratePdf, isGenerating }) => {
+    const nomeCliente = client.nome || 'Cliente';
+    const telefone = client.telefone.replace(/\D/g, ''); 
+    
+    const whatsappMessage = `Olá ${nomeCliente}, aqui está o seu orçamento de Aquecimento Solar. Por favor, baixe o arquivo PDF gerado e anexe-o nesta conversa.`;
+    const whatsappUrl = `https://wa.me/${telefone}?text=${encodeURIComponent(whatsappMessage)}`;
+
+    const handleClick = () => {
+        onGeneratePdf();
+        setTimeout(() => {
+            window.open(whatsappUrl, '_blank');
+        }, 1000); 
+    };
+
+    return (
+        <button
+            onClick={handleClick}
+            className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-200 flex items-center disabled:opacity-50"
+            disabled={isGenerating || !client.telefone}
+            title={!client.telefone ? "Preencha o telefone do cliente para enviar pelo WhatsApp" : "Gera o PDF e abre o WhatsApp (o usuário deve anexar o PDF)"}
+        >
+            {isGenerating ? (
+                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+            ) : (
+                <Send className="w-5 h-5 mr-2" /> 
+            )}
+            {isGenerating ? 'Gerando PDF...' : 'Enviar por WhatsApp'}
+        </button>
+    );
 };
 
 
 // --- COMPONENTE PRINCIPAL: App (Orquestrador) ---
 const App = () => {
-    // 1. Usa o Hook para obter todo o estado e lógica
     const {
         loading,
         userId,
@@ -111,7 +448,74 @@ const App = () => {
     const [isSavingBudget, setIsSavingBudget] = useState(false);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false); 
 
-    // Handlers de Ação
+    const generateAndDownloadPdf = useCallback(async (isSilent = false) => {
+        if (!budgetRef.current) return;
+
+        const html2pdf = (await import('html2pdf.js')).default;
+
+        setIsGeneratingPdf(true);
+        const nomeArquivo = `Orcamento_Solar_${client.nome.replace(/ /g, '_') || 'Cliente'}_${new Date().toISOString().substring(0, 10)}.pdf`;
+
+        const options = {
+            margin: 10,
+            filename: nomeArquivo,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, logging: false, scrollY: 0, letterRendering: true },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        try {
+            await html2pdf().set(options).from(budgetRef.current).save();
+            if (!isSilent) {
+                 alert('PDF gerado e baixado com sucesso!');
+            }
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+            alert('Erro ao gerar o PDF. Verifique o console. (Certifique-se de que está no navegador)');
+        } finally {
+            setIsGeneratingPdf(false);
+        }
+    }, [client.nome]); 
+
+
+    // 🚨 CORREÇÃO: O handlePrint foi corrigido para não injetar o CDN do Tailwind na janela de impressão.
+    const handlePrint = () => {
+         if (budgetRef.current) {
+            const printContents = budgetRef.current.outerHTML;
+            const printWindow = window.open('', '_blank');
+
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Orçamento Solar</title>
+                    <style>
+                    /* Estilos essenciais mínimos para impressão sem o CDN */
+                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Roboto+Mono:wght@400;700&display=swap');
+                    body { font-family: 'Inter', sans-serif; margin: 0; padding: 20px; color: #1f2937; }
+                    .budget-view { max-width: 800px; margin: 0 auto; }
+                    .header-print h1 { font-size: 24px !important; }
+                    /* Garante que o CSS global da BudgetView será pego */
+                    .total-row-print td { background-color: #DBEAFE !important; color: #06B6D4 !important; }
+                    </style>
+                </head>
+                <body class="p-8">
+                    ${printContents}
+                    <script>
+                    setTimeout(() => {
+                        window.print();
+                        window.onafterprint = function() {
+                        window.close();
+                        };
+                    }, 500);
+                    </script>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+        }
+    };
+
+
     const handleSaveBudget = async () => {
         setIsSavingBudget(true);
         const docId = await saveBudget(); 
@@ -122,12 +526,7 @@ const App = () => {
         }
         setIsSavingBudget(false);
     };
-
-    const pdfGenerator = useCallback((isSilent) => {
-        generateAndDownloadPdf(budgetRef, client.nome, setIsGeneratingPdf, isSilent);
-    }, [client.nome]);
-
-    // Simplificando o loading
+    
     if (loading && !isAuthReady) {
         return (
             <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -138,11 +537,10 @@ const App = () => {
             </div>
         );
     }
-    
-    // ATENÇÃO: Removemos a tag <script src="https://cdn.tailwindcss.com"></script> daqui!
 
     return (
         <div className="min-h-screen bg-gray-50 p-4 sm:p-8 font-sans">
+            {/* 🚨 REMOVIDO: A linha do CDN do Tailwind foi removida daqui! */}
             <div className="max-w-7xl mx-auto space-y-8">
 
                 {/* Cabeçalho */}
@@ -157,26 +555,44 @@ const App = () => {
                 {/* Colunas: Formulário de Edição vs. Preços Base */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="lg:col-span-2 space-y-8">
-                        {/* 1. Dados do Cliente */}
                         <ClientForm client={client} handleClientChange={handleClientChange} />
-
-                        {/* 2. Itens do Orçamento */}
                         <ItemTable items={items} handleItemChange={handleItemChange} totalValue={totalValue} />
 
                         {/* Ações */}
-                        <ActionButtons
-                            client={client}
-                            handlePrint={() => handlePrint(budgetRef)}
-                            handleSaveBudget={handleSaveBudget}
-                            isSavingBudget={isSavingBudget}
-                            isGeneratingPdf={isGeneratingPdf}
-                            generateAndDownloadPdf={pdfGenerator}
-                        />
+                        <div className="flex justify-end space-x-4 no-print">
+                            <WhatsappButton 
+                                client={client} 
+                                onGeneratePdf={() => generateAndDownloadPdf(true)} 
+                                isGenerating={isGeneratingPdf}
+                            />
+                            
+                            <button
+                                onClick={handleSaveBudget}
+                                className="bg-sky-500 hover:bg-sky-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-200 flex items-center disabled:opacity-50"
+                                disabled={isSavingBudget || isGeneratingPdf}
+                            >
+                                {isSavingBudget ? (
+                                    <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                                ) : (
+                                    <Save className="w-5 h-5 mr-2" />
+                                )}
+                                {isSavingBudget ? 'Salvando...' : 'Salvar Orçamento (Firestore)'} 
+                            </button>
+                            <button
+                                onClick={() => generateAndDownloadPdf(false)}
+                                className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-200 flex items-center disabled:opacity-50"
+                                disabled={isGeneratingPdf}
+                            >
+                                <Printer className="w-5 h-5 mr-2" />
+                                Gerar e Baixar PDF
+                            </button>
+                        </div>
                     </div>
 
-                    {/* Configuração de Preços Base */}
                     <div className="lg:col-span-1 no-print">
                         <PriceSettings 
+                            userId={userId} 
+                            isAuthReady={isAuthReady} 
                             basePrices={basePrices} 
                             saveBasePrices={saveBasePrices}
                             loadingHook={loading}
